@@ -1,0 +1,325 @@
+from goto import goto, label
+from goto import with_goto
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import axes
+import math
+import copy
+
+class vertex:
+
+    def __init__(self, name, coordinates):
+        self.name=str(name)
+        self.coordinates=coordinates
+
+    def print_vertex(self):
+        print('Name: '+ self.name + ', Coordinates: '+ str(self.coordinates) +'\t', end='\n')
+
+    def __eq__(self, other):
+        return not((self.coordinates-other.coordinates).all())
+
+    def __hash__(self):
+        return hash(self.name)
+
+class edge:
+    def __init__(self, ver_1, ver_2):
+        self.ends = frozenset({ver_1,ver_2})
+
+    def __eq__(self, other):
+        return self.ends == other.ends
+
+    def __hash__(self):
+        return hash(tuple(sorted(self.__dict__.items())))
+
+    def get_other_end(self, vertex):
+        return self.ends.difference(vertex)
+
+    def print_edge(self, ending='\n'):
+        for j in self.ends:
+            print(j.name, end='')
+        print(end=ending)
+    def is_triangle(self, ed1, ed2):
+        if (self==ed1 or self==ed2 or ed1==ed2):
+            return 0
+        if not(self.ends.isdisjoint(ed1.ends)) and not(self.ends.isdisjoint(ed2.ends)) and not(ed2.ends.isdisjoint(ed1.ends)):
+            if len(self.ends.union(ed1.ends.union(ed2.ends)))==3:
+                return 1
+        else:
+            return 0
+
+class face:
+    def __init__(self, edges):
+        temp= set()
+        self.boundary= frozenset(edges)
+        for ed in edges:
+            temp= temp.union(ed.ends)
+        self.name = frozenset(temp)
+
+    def symmetric_difference(self, other):
+        new_boundary = self.boundary.symmetric_difference(other.boundary)
+        return face(new_boundary)
+
+    def issubset(self, edges):
+        if (self.boundary.issubset(edges)):
+            return True
+        else:
+            return False
+
+def print_bound(edges, ending='-'):
+    for ed in edges:
+        ed.print_edge(ending)
+    print(end='\n')
+
+def half_vertex(ver1, ver2):
+    return vertex(np.array2string((ver1.coordinates.astype(dtype='float64')+ver2.coordinates.astype(dtype='float64'))/2), (ver1.coordinates.astype(dtype='float64')+ver2.coordinates.astype(dtype='float64'))/2)
+
+class graph:
+    def __init__(self, vertices):
+        self.vertices= set()
+        for vertex in vertices:
+            self.vertices.add(vertex)
+        self.incidents = dict()
+        self.touches = dict()
+        self.faces= dict()
+        self.edges= set()
+
+    def add_edges(self, ed):
+        if isinstance(ed, edge):
+            self.edges.add(ed)
+            for end in ed.ends:
+                if not(end in self.incidents.keys()):
+                    self.incidents[end] = set()
+                self.incidents[end].add(ed)
+        if hasattr(ed, '__iter__'):
+            for ob in ed:
+                self.edges.add(ob)
+                for end in ob.ends:
+                    if not(end in self.incidents.keys()):
+                        self.incidents[end]=set()
+                    self.incidents[end].add(ob)
+
+    def contains_edge(self, ver_1, ver_2):
+        for edge in self.edges:
+            if (ver_1 in edge.ends) and (ver_2 in edge.ends):
+                return 1
+        return 0
+
+    def complete_G(self):
+        temp = copy.deepcopy(self)
+        for verte in self.vertices:
+            for vert in self.vertices:
+                if vert!=verte and abs(vert.coordinates[0]-verte.coordinates[0])<2 and abs(vert.coordinates[1]-verte.coordinates[1])<2:
+                    temp.add_edges(edge(verte, vert))
+        return temp
+    def remove_edge(self, edge):
+        self.edges.discard(edge)
+
+    def clear_edges(self):
+        self.edges.clear()
+
+    @with_goto
+    def gen_faces(self):
+        temp= self.complete_G()
+
+        for i in temp.edges:
+            for end in i.ends:
+                iter1=temp.incidents[end].difference({i})
+                for j in iter1:
+                    for end1 in j.ends.difference({end}):
+                        iter2=temp.incidents[end1].difference({j})
+                        for k in iter2:
+                            if not(k.ends.isdisjoint(i.ends.difference({end}))):
+                                fac = face(frozenset({i, j, k}))
+                                gnome = frozenset({i})
+                                if not(frozenset({i}) in temp.touches.keys()):
+                                    temp.touches[gnome]=set()
+                                temp.touches[gnome].add(fac)
+                                gnome = frozenset({j})
+                                if not(frozenset({j}) in temp.touches.keys()):
+                                    temp.touches[gnome]=set()
+                                temp.touches[gnome].add(fac)
+                                gnome = frozenset({k})
+                                if not(frozenset({k}) in temp.touches.keys()):
+                                    temp.touches[gnome]=set()
+                                temp.touches[gnome].add(fac)
+                                temp.faces[fac.name] = fac.boundary
+
+        label .end
+
+        for key1, fac in temp.faces.items():
+            for k in fac:
+                for freak in temp.touches[frozenset({k})]:
+                    key2 = freak.name
+                    fac2 = freak.boundary
+                    if not(k in self.edges) and (fac.intersection(fac2) == frozenset({k})) and (len(fac.intersection(self.edges))>=1) and (len(fac2.intersection(self.edges))>=1):
+                        new_face=face(fac.symmetric_difference(fac2))
+                        temp.faces.pop(key1)
+                        temp.faces.pop(key2)
+                        temp.faces[new_face.name] = new_face.boundary
+                        goto .end
+            if not(fac.issubset(self.edges)):
+                temp.faces.pop(key1)
+                goto .end
+        self.faces=temp.faces
+    def triangulate_1f(self, fac_name):
+        fac_name = frozenset(fac_name)
+        if (fac_name in self.faces.keys()):
+            for el in fac_name:
+                break
+            temp = el.coordinates-el.coordinates
+            temp.astype(dtype='float64')
+            new_edges= set()
+            if len(fac_name)!=3:
+                for ver in fac_name:
+                    temp += ver.coordinates.astype(dtype='float64')
+                temp = temp / len(fac_name)
+                new_vertex = vertex(np.array2string(temp), temp)
+                self.vertices.add(new_vertex)
+                for ver in fac_name:
+                    new_edge=edge(new_vertex,ver)
+                    self.add_edges(new_edge)
+                    new_edges= new_edges.union({new_edge})
+                old_boundary = self.faces[frozenset(fac_name)]
+                new_edges_inner = new_edges
+                for ed2 in old_boundary:
+                    k=0
+                    for ed1 in new_edges:
+                        new_edges_inner.difference({ed1})
+                        for ed3 in new_edges_inner:
+                            if k==2:
+                                break
+                            if ed1.is_triangle(ed2,ed3):
+                                k+=1
+                                fac= face({ed1,ed2,ed3})
+                                self.faces[fac.name] = fac.boundary
+                self.faces.pop(frozenset(fac_name))
+            else:
+                vers= list(fac_name)
+                a=half_vertex(vers[0],vers[1])
+                self.vertices.add(a)
+                b=half_vertex(vers[0], vers[2])
+                self.vertices.add(b)
+                c=half_vertex(vers[1], vers[2])
+                self.vertices.add(c)
+                self.edges.discard(edge(vers[0],vers[1]))
+                self.edges.discard(edge(vers[0], vers[2]))
+                self.edges.discard(edge(vers[1], vers[2]))
+                self.faces.pop(frozenset(fac_name))
+                ed1=edge(vers[0],a)
+                ed2=edge(vers[0],b)
+                ed3=edge(a,b)
+                fac_boundary=set({ed1,ed2,ed3})
+                self.add_edges(fac_boundary)
+                self.faces[frozenset({vers[0],a,b})]=fac_boundary
+                ed1 = edge(vers[2], c)
+                ed2 = edge(vers[2], b)
+                ed3 = edge(c, b)
+                fac_boundary = set({ed1, ed2, ed3})
+                self.add_edges(fac_boundary)
+                self.faces[frozenset({vers[2], c, b})] = fac_boundary
+                ed1 = edge(vers[1], a)
+                ed2 = edge(vers[1], c)
+                ed3 = edge(a, c)
+                fac_boundary = set({ed1, ed2, ed3})
+                self.add_edges(fac_boundary)
+                self.faces[frozenset({vers[1], a, c})] = fac_boundary
+                ed1 = edge(c, a)
+                ed2 = edge(a, b)
+                ed3 = edge(c, b)
+                fac_boundary = set({ed1, ed2, ed3})
+                self.add_edges(fac_boundary)
+                self.faces[frozenset({c, a, b})] = fac_boundary
+
+        else:
+            print('Face does not exist in the graph. Did not do anything.')
+
+    def triangulate_area(self, dx=None, minx=-100, maxx=100, y_coord_minus=np.full(1000,-100),y_coord_plus=np.full(1000,100)):
+        mark = set()
+        if dx!=None:
+            for ver in self.vertices:
+                j=0
+                for i in np.arange(minx, maxx, dx):
+                    if (y_coord_plus[j]>y_coord_minus[j]):
+                        if ver.coordinates[1]>=y_coord_minus[j] and ver.coordinates[1]<=y_coord_plus[j] and ver.coordinates[0]>=i and ver.coordinates[0]<=(i+dx):
+                            mark.add(ver)
+                    j+=1
+                    if j>=len(y_coord_minus):
+                        break
+        else:
+            mark=self.vertices
+        iter = list()
+        for key in self.faces.keys():
+            iter.append(key)
+        for key in iter:
+            if not(key.isdisjoint(mark)):
+                self.triangulate_1f(key)
+
+    def print_faces(self):
+        k=0
+        for i in self.faces.keys():
+            k+=1
+            print(str(k) + 'th face: (', end='')
+            l=0
+            for j in i:
+                if l<len(i)-1:
+                    l+=1
+                    print(j.name + '-', end='')
+                else:
+                    print(j.name + ')', end='\n')
+    def print_vertices(self):
+        for i in self.vertices:
+            i.print_vertex()
+    def print_edges(self):
+        for i in self.edges:
+            i.print_edge()
+
+    def plot_graph(self):
+        axes = plt.axes()
+        for ver in self.vertices:
+            axes.scatter(ver.coordinates[0],ver.coordinates[1], color='blue')
+        for ed in self.edges:
+            ends=list()
+            for end in ed.ends:
+                ends.append(end)
+            x = [ends[0].coordinates[0], ends[1].coordinates[0]]
+            y = [ends[0].coordinates[1], ends[1].coordinates[1]]
+            axes.plot(x,y, color='blue')
+        return axes
+
+def c_np_2D_vertex(i,j):
+    return vertex(np.array2string(np.array([i,j])), np.array([i,j]))
+
+
+
+points = list()
+boundaries = list()
+for k in range(-5,6):
+    for l in range(-5,6):
+        i=float(k)
+        j=float(l)
+        points.append(c_np_2D_vertex(i,j))
+        if i>-5:
+            boundaries.append(edge(c_np_2D_vertex(i,j), c_np_2D_vertex(i-1,j)))
+
+        if j>-5:
+            boundaries.append(edge(c_np_2D_vertex(i, j), c_np_2D_vertex(i, j-1)))
+        if i<5:
+            boundaries.append(edge(c_np_2D_vertex(i, j), c_np_2D_vertex(i +1, j)))
+        if j<5:
+            boundaries.append(edge(c_np_2D_vertex(i, j), c_np_2D_vertex(i, j+1)))
+G = graph(points)
+G.add_edges(boundaries)
+
+G.gen_faces()
+y_plus = np.empty(100)
+y_minus = np.empty(100)
+for i in range(0, 100):
+    y = -5. + float(i)/10
+    y_plus[i]= math.sqrt(max(4-y*y,0))
+    y_minus = -y_plus
+print(y_plus)
+for i in range(0,3):
+    G.triangulate_area(0.1, minx=-5, maxx=5, y_coord_plus=y_plus, y_coord_minus=y_minus)
+plt.figure()
+G.plot_graph()
+plt.show()
